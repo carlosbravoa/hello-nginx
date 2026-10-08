@@ -76,6 +76,7 @@ Bump `version` for every release.
 | `nginx/site.conf` | **Your nginx rules** inside the `server {}` block: routing, redirects, headers, caching, proxying. |
 | `nginx/http.conf` | **Your nginx rules** at `http {}` level: `upstream`, `map`, rate-limit zones. |
 | `snap/snapcraft.yaml` | Snap metadata (name, version, description). |
+| `snap/gui/icon.png` | Snap icon (512×512 PNG), shown in the Snap Store. Source: `assets/icon.svg`. |
 | `src/` | The machinery: CLI, service scripts, config templates, developer pages. Normally untouched. |
 | `snap/hooks/` | Install and settings hooks. Normally untouched. |
 | `tests/` | `lxd-smoke.sh` builds a container, installs the snap and runs ~55 checks. |
