@@ -1,0 +1,12 @@
+#!/bin/bash
+# Runs on install, refresh and every `snap set <snap> ...`.
+# Any failure here rejects the `snap set` and keeps the previous values.
+set -e
+. "$SNAP/lib/common.sh"
+
+validate_settings
+apply_config
+
+if service_active; then
+    snapctl restart --reload "$SERVICE"
+fi

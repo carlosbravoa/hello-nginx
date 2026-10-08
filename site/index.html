@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hello world</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <h1>Hello <span>world</span></h1>
+  <p class="lead">This page is served by nginx from inside the <code>hello-nginx</code> snap.</p>
+
+  <div class="card">
+    <h2>Serve your own site the same way</h2>
+    <p><code>hello-nginx</code> is also a template. Customize this snap from its source by
+       replacing this page with your website. You then build a snap of your own that
+       contains your site and the nginx server that serves it.</p>
+    <p>Source and documentation: <a href="https://github.com/carlosbravoa/hello-nginx">github.com/carlosbravoa/hello-nginx</a></p>
+  </div>
+
+  <div class="card">
+    <h2>Why snap a whole site</h2>
+    <p>The content is versioned with the server:</p>
+    <ul>
+      <li><strong>Updates are all-or-nothing.</strong> <code>snap refresh</code> swaps the site
+          and nginx together, so nobody sees a half-copied site.</li>
+      <li><strong>Rollback is one command.</strong> <code>snap revert my-site</code> brings back
+          the previous site.</li>
+      <li><strong>Channels become environments.</strong> For example, <code>edge</code> can be
+          staging and <code>stable</code> production, with <code>snapcraft release</code> as the
+          promotion step.</li>
+      <li><strong>cloud-init becomes trivial.</strong> It's just <code>snap install my-site</code>,
+          with no setup steps after it.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Make it yours</h2>
+    <p>This page is <code>site/index.html</code> in the source. Replace the contents of
+       <code>site/</code> with your website, then:</p>
+<pre>scripts/rename.sh my-site
+snapcraft pack
+tests/lxd-smoke.sh
+snapcraft upload my-site_*.snap --release=edge</pre>
+  </div>
+
+  <div class="card">
+    <h2>On the server</h2>
+<pre>sudo hello-nginx port 80
+hello-nginx status
+sudo hello-nginx logs -f
+sudo snap revert hello-nginx    # back to the previous site</pre>
+  </div>
+
+  <div class="card">
+    <h2>Developer pages</h2>
+    <p>Off by default. Turn them on with <code>sudo hello-nginx dev-pages on</code> for
+       a dashboard at <a href="/_hello/">/_hello/</a>, a request echo at
+       <a href="/_hello/request">/_hello/request</a> and nginx counters at
+       <a href="/_hello/status">/_hello/status</a>.</p>
+  </div>
+</main>
+</body>
+</html>

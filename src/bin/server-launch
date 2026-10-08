@@ -1,0 +1,9 @@
+#!/bin/bash
+# Daemon entry point: regenerate the config (paths change on refresh) and run nginx.
+set -e
+. "$SNAP/lib/common.sh"
+
+apply_config
+get_port > "$LIVE_PORT"
+exec "$SNAP/usr/sbin/nginx" -p "$SNAP_DATA/" -e "$LOG_DIR/error.log" \
+    -c "$NGINX_CONF" -g 'daemon off;'

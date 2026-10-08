@@ -1,0 +1,7 @@
+#!/bin/bash
+# Fresh installs only (not refreshes): store the default settings.
+set -e
+. "$SNAP/lib/common.sh"
+
+snapctl set port="$DEFAULT_PORT" autoindex=false dev-pages=false
+ensure_dirs

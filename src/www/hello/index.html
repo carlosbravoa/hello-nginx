@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Server dashboard</title>
+<style>
+  :root { --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #fff; --line: #e3e3e0; --accent: #0b8457; --bad: #c0392b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151517; --fg: #ececee; --muted: #9a9aa2; --card: #1e1e21; --line: #2e2e33; --accent: #3ccf8e; --bad: #ff6b5b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Ubuntu, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  .pill { font-size: .8rem; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { color: var(--accent); border-color: currentColor; }
+  .pill.bad { color: var(--bad); border-color: currentColor; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .stat .k { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .stat .v { font-size: 1.6rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; overflow-x: auto; }
+  .card h2 { font-size: .95rem; margin: 0 0 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  td { padding: 4px 8px 4px 0; vertical-align: top; border-top: 1px solid var(--line); }
+  td:first-child { color: var(--muted); white-space: nowrap; width: 1%; padding-right: 16px; }
+  code, td { font-family: ui-monospace, "Ubuntu Mono", Menlo, monospace; word-break: break-all; }
+  td:first-child { font-family: inherit; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="name">Server dashboard</h1>
+    <span id="health" class="pill">checking…</span>
+  </header>
+
+  <div class="grid">
+    <div class="stat"><div class="k">Active conns</div><div class="v" id="s-active">–</div></div>
+    <div class="stat"><div class="k">Reading</div><div class="v" id="s-reading">–</div></div>
+    <div class="stat"><div class="k">Writing</div><div class="v" id="s-writing">–</div></div>
+    <div class="stat"><div class="k">Waiting</div><div class="v" id="s-waiting">–</div></div>
+    <div class="stat"><div class="k">Requests</div><div class="v" id="s-requests">–</div></div>
+    <div class="stat"><div class="k">Req/s</div><div class="v" id="s-rps">–</div></div>
+  </div>
+
+  <div class="card"><h2>Server configuration</h2><table id="config"></table></div>
+  <div class="card"><h2>Your request</h2><table id="request"></table></div>
+
+  <p class="muted">
+    Endpoints:
+    <a href="/">/</a> ·
+    <a href="/_hello/status">/_hello/status</a> ·
+    <a href="/_hello/request">/_hello/request</a> ·
+    <a href="/_hello/health">/_hello/health</a> ·
+    <a href="/_hello/config">/_hello/config</a>
+    — refreshes every 2s.
+  </p>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let last = null;
+
+  function fill(table, obj) {
+    table.replaceChildren(...Object.entries(obj)
+      .filter(([, v]) => v !== "" && v !== null)
+      .map(([k, v]) => {
+        const tr = document.createElement("tr");
+        const a = document.createElement("td"); a.textContent = k;
+        const b = document.createElement("td"); b.textContent = String(v);
+        tr.append(a, b);
+        return tr;
+      }));
+  }
+
+  async function status() {
+    try {
+      const t = await (await fetch("/_hello/status", { cache: "no-store" })).text();
+      const n = t.match(/\d+/g).map(Number);
+      // Active, accepts, handled, requests, reading, writing, waiting
+      const [active, , , requests, reading, writing, waiting] = n;
+      const now = performance.now();
+      $("s-active").textContent = active;
+      $("s-reading").textContent = reading;
+      $("s-writing").textContent = writing;
+      $("s-waiting").textContent = waiting;
+      $("s-requests").textContent = requests.toLocaleString();
+      if (last) $("s-rps").textContent = ((requests - last.r) / ((now - last.t) / 1000)).toFixed(1);
+      last = { r: requests, t: now };
+      const h = $("health"); h.textContent = "healthy"; h.className = "pill ok";
+    } catch (e) {
+      const h = $("health"); h.textContent = "unreachable"; h.className = "pill bad";
+    }
+  }
+
+  async function once() {
+    try {
+      const cfg = await (await fetch("/_hello/config", { cache: "no-store" })).json();
+      $("name").textContent = cfg.snap;
+      document.title = cfg.snap + " dashboard";
+      fill($("config"), cfg);
+    } catch (e) {}
+    try { fill($("request"), await (await fetch("/_hello/request", { cache: "no-store" })).json()); } catch (e) {}
+  }
+
+  once();
+  status();
+  setInterval(status, 2000);
+</script>
+</body>
+</html>

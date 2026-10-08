@@ -1,0 +1,57 @@
+#!/bin/bash
+# reload-command for the server daemon: re-render, validate, graceful reload.
+#
+# `nginx -s reload` returns before the new workers run, so a request sent
+# right after could still hit old workers with the old config. Wait until the
+# internal probe server (see nginx.conf.in) answers with the generation we
+# just rendered. Inspecting worker processes instead is not possible: reading
+# other processes' /proc entries or the service's cgroup.procs is denied by
+# AppArmor.
+set -e
+. "$SNAP/lib/common.sh"
+
+PROBE_HOST=reload-probe.invalid
+
+probe() { # -> 0 if the server answers with $GENERATION
+    local line body=
+    { exec 3<>"/dev/tcp/127.0.0.1/$port"; } 2>/dev/null || return 1
+    printf 'GET / HTTP/1.0\r\nHost: %s\r\n\r\n' "$PROBE_HOST" >&3
+    while IFS= read -r -t 2 line <&3; do body=${line%$'\r'}; done
+    exec 3<&-
+    [ "$body" = "$GENERATION" ]
+}
+
+# The port nginx is actually on. Not read from nginx.conf: the CLI renders
+# the new config before asking for the reload.
+old_port=$(cat "$LIVE_PORT" 2>/dev/null || true)
+apply_config
+port=$(get_port)
+
+nginx_run -c "$NGINX_CONF" -s reload
+
+# Three answers in a row, so old workers still draining don't fool us.
+hits=0
+for _ in $(seq 100); do
+    if probe; then
+        hits=$((hits + 1))
+        [ "$hits" -lt 3 ] || break
+    else
+        hits=0
+        sleep 0.05
+    fi
+done
+if [ "$hits" -lt 3 ]; then
+    # Fail so `snapctl restart --reload` callers can roll back. nginx itself
+    # keeps running with the previous configuration.
+    die "nginx is not serving the new configuration after 5s; see: $SNAP_INSTANCE_NAME logs error"
+fi
+echo "$port" > "$LIVE_PORT"
+
+# On a port change, old workers keep the old port open until they exit.
+if [ -n "$old_port" ] && [ "$old_port" != "$port" ]; then
+    for _ in $(seq 100); do
+        port_open "$old_port" || exit 0
+        sleep 0.05
+    done
+    warn "port $old_port is still open 5s after moving to $port (long-lived connections?)"
+fi

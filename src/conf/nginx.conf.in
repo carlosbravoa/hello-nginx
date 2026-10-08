@@ -1,0 +1,79 @@
+# Generated from $SNAP/conf/nginx.conf.in -- do not edit.
+# Change settings with the snap's CLI or `snap set`; change site behaviour
+# in nginx/site.conf and nginx/http.conf in the source tree.
+
+# Workers stay root: the snap's files are root-owned and confinement leaves no
+# other user to switch to. Snap seccomp forbids setgroups(), so each worker
+# logs a harmless "initgroups(root, 0) failed" line at startup.
+user root;
+worker_processes auto;
+pid @SNAP_DATA@/run/nginx.pid;
+error_log @SNAP_COMMON@/logs/error.log warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       @SNAP@/etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    sendfile           on;
+    tcp_nopush         on;
+    keepalive_timeout  65;
+    server_tokens      off;
+
+    gzip       on;
+    gzip_vary  on;
+    gzip_types text/plain text/css text/xml application/json
+               application/javascript application/xml image/svg+xml;
+
+    client_body_temp_path @SNAP_DATA@/tmp/client_body;
+    proxy_temp_path       @SNAP_DATA@/tmp/proxy;
+    fastcgi_temp_path     @SNAP_DATA@/tmp/fastcgi;
+    uwsgi_temp_path       @SNAP_DATA@/tmp/uwsgi;
+    scgi_temp_path        @SNAP_DATA@/tmp/scgi;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" rt=$request_time';
+    access_log @SNAP_COMMON@/logs/access.log main;
+
+    # ---- nginx/http.conf
+    include @SNAP@/conf/user/http.conf;
+
+    server {
+        listen @PORT@ default_server;
+@LISTEN_V6@
+        server_name _;
+
+        root @SNAP@/site;
+        index index.html index.htm;
+        autoindex @AUTOINDEX@;
+        autoindex_localtime on;
+
+        # Never serve dotfiles (.git, .env, ...) except /.well-known/.
+        location ~ /\.(?!well-known/) {
+            return 404;
+        }
+
+@DEV_PAGES@
+
+        # ---- nginx/site.conf
+        include @SNAP@/conf/user/site.conf;
+    }
+
+    # Internal: server-reload polls this until the new workers answer with
+    # the new generation. Only reachable from localhost with this Host name.
+    server {
+        listen @PORT@;
+        server_name reload-probe.invalid;
+        access_log off;
+        allow 127.0.0.1;
+        deny all;
+        location / {
+            default_type text/plain;
+            return 200 "@GENERATION@\n";
+        }
+    }
+}

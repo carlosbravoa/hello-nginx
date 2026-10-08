@@ -1,0 +1,100 @@
+# Template: run `scripts/rename.sh <your-snap-name>` first, then edit
+# version, title, summary, description, license and the links below.
+# Your content goes in site/, your nginx rules in nginx/. See README.md.
+name: hello-nginx
+base: core24
+version: '2.0.0'
+title: Hello nginx
+# This template is MIT; the bundled nginx is BSD-2-Clause.
+license: MIT AND BSD-2-Clause
+contact: https://github.com/carlosbravoa/hello-nginx/issues
+issues: https://github.com/carlosbravoa/hello-nginx/issues
+source-code: https://github.com/carlosbravoa/hello-nginx
+website: https://github.com/carlosbravoa/hello-nginx
+summary: Static website served by nginx, packaged as a snap
+description: |
+  A static website served by a strictly confined nginx, listening on
+  port 8080 as soon as the snap is installed.
+
+  The site and the web server ship together in one snap, so every update
+  is atomic and `snap revert` rolls back to the previous version.
+
+  Manage it with the bundled command:
+
+    sudo hello-nginx port 80
+    sudo hello-nginx restart
+    hello-nginx status
+    sudo hello-nginx logs -f
+grade: stable
+confinement: strict
+
+hooks:
+  configure:
+    plugs:
+      - network        # checks whether a new port is already taken
+      - network-bind   # `nginx -t` opens the listening sockets while validating
+
+apps:
+  # The management CLI. It is named after the snap, so after renaming the
+  # snap the command is `<your-snap-name>`.
+  hello-nginx:
+    command: bin/cli
+    plugs:
+      - network
+      - network-bind
+
+  server:
+    command: bin/server-launch
+    reload-command: bin/server-reload
+    daemon: simple
+    restart-condition: on-failure
+    plugs:
+      - network        # outgoing connections, e.g. proxy_pass in nginx/site.conf
+      - network-bind
+
+parts:
+  # nginx from the Ubuntu archive, trimmed to the binary and mime.types.
+  nginx:
+    plugin: nil
+    stage-packages:
+      - nginx
+    prime:
+      - -etc/init.d
+      - -etc/logrotate.d
+      - -etc/ufw
+      - -etc/nginx/sites-*
+      - -etc/nginx/conf.d
+      - -etc/nginx/modules-*
+      - -usr/lib/systemd
+      - -usr/share/doc
+      - -usr/share/man
+      - -usr/share/lintian
+      - -usr/share/nginx
+      - -usr/share/apport
+      - -usr/share/debconf
+      - -usr/share/perl5
+      - -usr/bin/debconf*
+      - -usr/sbin/dpkg-*
+      - -var
+
+  # Service scripts, config templates and developer pages. You should not
+  # need to change these.
+  runtime:
+    plugin: dump
+    source: src
+
+  # Your website, served read-only from $SNAP/site.
+  site:
+    plugin: nil
+    source: site
+    override-build: |
+      mkdir -p "$CRAFT_PART_INSTALL/site"
+      cp -a ./. "$CRAFT_PART_INSTALL/site/"
+
+  # Your nginx rules, included into the generated configuration.
+  nginx-conf:
+    plugin: nil
+    source: nginx
+    override-build: |
+      install -D -m 644 http.conf "$CRAFT_PART_INSTALL/conf/user/http.conf"
+      install -D -m 644 site.conf "$CRAFT_PART_INSTALL/conf/user/site.conf"

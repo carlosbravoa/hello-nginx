@@ -1,0 +1,170 @@
+#!/bin/bash
+# Management CLI. Exposed as `<snap-name>` (the app is named after the snap).
+set -e
+. "$SNAP/lib/common.sh"
+
+PROG="$SNAP_INSTANCE_NAME"
+
+usage() {
+    cat <<EOF
+Usage: $PROG <command> [args]
+
+Server control (need sudo):
+  start                 Start the server and enable it at boot
+  stop                  Stop the server and disable it at boot
+  restart               Full restart of the server
+  reload                Re-read configuration without dropping connections
+
+Settings (need sudo):
+  port <n>              Listen on port <n> (default $DEFAULT_PORT)
+  autoindex on|off      Directory listings for folders without index.html
+  dev-pages on|off      Developer pages under /_hello/ (default off)
+
+Information:
+  status                Service state, URL and what is being served
+  config                Show the current settings
+  check                 Request / and report the HTTP status
+  test                  Validate the generated nginx configuration (sudo)
+  logs [access|error] [-f] [-n N]
+                        Show (or follow) the server logs (sudo)
+  version               Show snap and nginx versions
+  help                  Show this help
+
+Settings can also be changed with:  sudo snap set $PROG port=80 dev-pages=true
+EOF
+}
+
+url() {
+    local port
+    port=$(get_port)
+    if [ "$port" = 80 ]; then echo "http://localhost/"; else echo "http://localhost:$port/"; fi
+}
+
+reload_if_running() {
+    if service_active; then
+        snapctl restart --reload "$SERVICE" || return 1
+        echo "Server reloaded."
+    else
+        echo "Server is stopped; run 'sudo $PROG start' to apply."
+    fi
+}
+
+# set_and_apply key value: persist a setting, roll back if nginx rejects it.
+set_and_apply() {
+    local key=$1 value=$2 old
+    old=$(snapctl get "$key")
+    snapctl set "$key=$value"
+    if ! (apply_config) || ! reload_if_running; then
+        if [ -n "$old" ]; then snapctl set "$key=$old"; else snapctl unset "$key"; fi
+        (apply_config && reload_if_running) >/dev/null 2>&1 || true
+        die "settings were not changed (details: $PROG logs error)"
+    fi
+}
+
+on_off() { # name value -> true/false
+    case "$2" in
+        on|true|yes|1) echo true ;;
+        off|false|no|0) echo false ;;
+        *) die "$1 expects 'on' or 'off', got '${2:-}'" ;;
+    esac
+}
+
+cmd_status() {
+    local state
+    state=$(snapctl services "$SERVICE" | awk 'NR==2 {print $2 "/" $3}')
+    echo "Service:   $SERVICE ($state)"
+    echo "URL:       $(url)"
+    echo "Serving:   $SITE_DIR  (version $SNAP_VERSION, revision $SNAP_REVISION)"
+    if [ "$(get_devpages)" = true ]; then
+        echo "Dev pages: $(url)_hello/"
+    fi
+    echo "Logs:      $LOG_DIR/"
+}
+
+cmd_config() {
+    printf '%-10s %s\n' port "$(get_port)"
+    printf '%-10s %s\n' autoindex "$(get_autoindex)"
+    printf '%-10s %s\n' dev-pages "$(get_devpages)"
+}
+
+cmd_check() {
+    local port status_line
+    port=$(get_port)
+    if ! { exec 3<>"/dev/tcp/127.0.0.1/$port"; } 2>/dev/null; then
+        die "nothing is listening on port $port (try: $PROG status)"
+    fi
+    printf 'GET / HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
+    status_line=$(head -n1 <&3 | tr -d '\r')
+    exec 3<&-
+    case "$status_line" in
+        HTTP/*" 2"??" "*|HTTP/*" 3"??" "*) echo "OK: $(url) answered: $status_line" ;;
+        HTTP/*) die "$(url) answered with an error: $status_line" ;;
+        *) die "unexpected response: ${status_line:-<none>}" ;;
+    esac
+}
+
+cmd_logs() {
+    local which=access follow= lines=50 file
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            access|error) which=$1 ;;
+            -f|--follow) follow=1 ;;
+            -n) shift; lines=${1:?-n needs a number} ;;
+            *) die "unknown logs option '$1'" ;;
+        esac
+        shift
+    done
+    file="$LOG_DIR/$which.log"
+    [ -r "$file" ] || die "cannot read $file (try with sudo)"
+    if [ -n "$follow" ]; then exec tail -n "$lines" -F "$file"; fi
+    tail -n "$lines" "$file"
+}
+
+cmd=${1:-help}
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+    start)
+        require_root "$cmd"
+        snapctl start --enable "$SERVICE"
+        echo "Started. Serving on $(url)" ;;
+    stop)
+        require_root "$cmd"
+        snapctl stop --disable "$SERVICE"
+        echo "Stopped." ;;
+    restart)
+        require_root "$cmd"
+        apply_config
+        snapctl restart "$SERVICE"
+        echo "Restarted. Serving on $(url)" ;;
+    reload)
+        require_root "$cmd"
+        apply_config
+        reload_if_running ;;
+    port)
+        require_root "$cmd"
+        [ $# -eq 1 ] || die "usage: $PROG port <n>"
+        validate_port "$1"
+        validate_port_free "$1"
+        set_and_apply port "$1"
+        echo "Listening on $(url)" ;;
+    autoindex)
+        require_root "$cmd"
+        set_and_apply autoindex "$(on_off autoindex "${1:-}")" ;;
+    dev-pages)
+        require_root "$cmd"
+        set_and_apply dev-pages "$(on_off dev-pages "${1:-}")"
+        [ "$(get_devpages)" = false ] || echo "Developer pages: $(url)_hello/" ;;
+    status)  cmd_status ;;
+    config)  cmd_config ;;
+    check)   cmd_check ;;
+    test)
+        require_root "$cmd"
+        nginx_test "$NGINX_CONF" && echo "nginx configuration $NGINX_CONF is valid." ;;
+    logs)    cmd_logs "$@" ;;
+    version)
+        echo "$PROG $SNAP_VERSION (revision $SNAP_REVISION)"
+        "$SNAP/usr/sbin/nginx" -v 2>&1 ;;
+    help|-h|--help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac
