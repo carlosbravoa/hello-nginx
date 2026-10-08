@@ -16,10 +16,23 @@ description: |
   A static website served by a strictly confined nginx, listening on
   port 8080 as soon as the snap is installed.
 
-  The site and the web server ship together in one snap, so every update
-  is atomic and `snap revert` rolls back to the previous version.
+  hello-nginx is also a template. Customize this snap from its source by
+  replacing the demo page with your website, and you get a snap of your
+  own that contains your site and the nginx server that serves it.
+  Source and documentation: https://github.com/carlosbravoa/hello-nginx
 
-  Manage it with the bundled command:
+  Why snap a whole site? The content is versioned with the server:
+
+  * Updates are all-or-nothing. `snap refresh` swaps the site and nginx
+    together, so nobody sees a half-copied site.
+  * Rollback is one command. `snap revert my-site` brings back the
+    previous site.
+  * Channels become environments. For example, edge can be staging and
+    stable production, with `snapcraft release` as the promotion step.
+  * cloud-init becomes trivial. It's just `snap install my-site`, with no
+    setup steps after it.
+
+  Manage the server with the bundled command:
 
     sudo hello-nginx port 80
     sudo hello-nginx restart
