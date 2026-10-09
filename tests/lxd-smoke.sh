@@ -42,10 +42,14 @@ failed=$?
 # AppArmor denials are logged by the host kernel, not inside the container.
 echo "==> AppArmor denials"
 if journalctl -k -n 1 >/dev/null 2>&1; then
-    # setuid/setgid denials come from nginx workers dropping to root: harmless.
+    # Harmless, see docs/troubleshooting.md:
+    # - setuid/setgid: nginx workers dropping to root.
+    # - dac_override from git: an optional capability check; the same git
+    #   steps run without CAP_DAC_OVERRIDE unconfined with no failed syscall.
     denials=$(journalctl -k --since "$started" --no-pager 2>/dev/null |
         grep 'apparmor="DENIED"' | grep "lxd-${CT}_" | grep 'profile="snap\.' |
-        grep -v -e 'capname="setuid"' -e 'capname="setgid"' || true)
+        grep -v -e 'capname="setuid"' -e 'capname="setgid"' |
+        grep -v 'comm="git".*capname="dac_override"' || true)
     if [ -n "$denials" ]; then
         echo "  FAIL unexpected denials:"
         echo "$denials" | sed 's/.*apparmor=/    apparmor=/' | cut -c1-220 | sort | uniq -c

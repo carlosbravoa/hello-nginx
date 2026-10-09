@@ -47,7 +47,7 @@ http {
 @LISTEN_V6@
         server_name _;
 
-        root @SNAP@/site;
+        root @SITE_ROOT@;
         index index.html index.htm;
         autoindex @AUTOINDEX@;
         autoindex_localtime on;

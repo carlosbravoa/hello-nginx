@@ -132,6 +132,9 @@ snap:
 The `snap` module runs during first boot, and the server starts as soon as
 the snap is installed. Add `--channel=edge` for staging machines.
 
+To serve a git repository instead of the built-in site, add
+`git.repo=<url>` to the `snap set` line (see [git-deploy.md](git-deploy.md)).
+
 ## Remove
 
 ```sh

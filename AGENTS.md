@@ -8,7 +8,9 @@ site built from it. Read this before changing anything under `src/`,
 
 A template that packages a static website and nginx into one strictly
 confined snap (core24). The site is baked into the snap at build time and
-served read-only from `$SNAP/site`. A small bash runtime renders the nginx
+served read-only from `$SNAP/site`. Alternatively, the `git.*` settings make
+the snap fetch a public git repository and serve that instead
+(`docs/git-deploy.md`). A small bash runtime renders the nginx
 configuration from settings and manages reloads. A CLI named after the
 snap manages the server.
 
@@ -30,9 +32,11 @@ snap/snapcraft.yaml      metadata, apps, plugs, parts
 snap/hooks/install       fresh install only: default settings
 snap/hooks/configure     install, refresh, every `snap set`: validate, render, reload
 src/lib/common.sh        settings getters/validators, render_config, apply_config
+src/lib/git.sh           git.* settings, fetch/checkout/rollback, site_root
 src/bin/cli              the management CLI (app named after the snap)
 src/bin/server-launch    daemon: apply_config, record live port, exec nginx
 src/bin/server-reload    reload-command: apply_config, HUP, confirm via probe
+src/bin/git-auto-update  timer app (every 5 min): `<snap> update` when due
 src/conf/nginx.conf.in   main nginx template (@PLACEHOLDERS@)
 src/conf/dev-pages.conf.in  /_hello/ locations, included when dev-pages=true
 src/www/hello/           developer dashboard (static HTML/JS)
@@ -61,7 +65,17 @@ sudo <snap> port 9000            (CLI, src/bin/cli)
 
 sudo snap set <snap> port=9000
   -> configure hook (same validation; failure rejects the `snap set`)
+
+sudo <snap> deploy <url>         (or snap set git.repo=<url>)
+  -> git_sync: shallow fetch into $SNAP_COMMON/git/repo.git
+     -> checkout into git/deploys/<id>/ (no .git, symlinks as files)
+     -> git/current = <id>
+  -> apply_config renders `root` from site_root(), then the confirmed reload
+  -> on failure: git_restore <previous id>
 ```
+
+The configure hook only fetches when `git.repo/branch/path` differ from
+the current deploy, so refreshes never hit the network.
 
 `apply_config` renders into a `mktemp` file, runs `nginx -t` on it, then
 moves it into place. A configuration that fails `nginx -t` never goes live.
@@ -120,6 +134,22 @@ generated `nginx.conf`, `config.json`, the pid file and temp dirs.
   - classic confinement
   The plain `home` plug doesn't help either: its rules are owner-only and
   the daemon runs as root.
+
+**git**
+- Always call git through the `git()` wrapper in `src/lib/git.sh`. It
+  sets `LD_LIBRARY_PATH`, because libcurl (needed for https) is not in the
+  base snap, and it isolates git from system and user configuration.
+- `GIT_INDEX_FILE` must not exist beforehand: git rejects an empty file,
+  so don't use `mktemp`.
+- Keep `core.symlinks=false` on checkout. A symlink in a repository
+  would otherwise let nginx serve files outside the checkout.
+- git triggers an occasional `dac_override` capability denial. It's harmless
+  (see `docs/troubleshooting.md`) and is filtered by exactly
+  `comm="git".*capname="dac_override"`.
+- Don't capture `git_sync` with `$(...)`. It takes a lock and sets an EXIT
+  trap. Call it directly or in a `( )` subshell, then compare `git_current`.
+- To run the timer service in a test, use `systemctl start
+  snap.<name>.git-auto-update.service`. `snap start` only starts the timer.
 
 **Reloads**
 - `nginx -s reload` returns before the new workers serve. Anything that

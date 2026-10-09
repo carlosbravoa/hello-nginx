@@ -69,6 +69,22 @@ it (see the reverse proxy recipe in
 - **`apparmor="DENIED" ... capname="setuid"` / `"setgid"`** in the kernel log
   for `snap.<name>.server`: the same thing seen from AppArmor.
 - **`[notice] ... signal process started`**: logged by every reload.
+- **`apparmor="DENIED" ... comm="git" ... capname="dac_override"`** for
+  `snap.<name>.<name>` or `snap.<name>.git-auto-update`, during a git
+  deploy. This is an optional capability check: the same git steps run
+  unconfined without `CAP_DAC_OVERRIDE` with no failed system call, and the
+  deploy succeeds. The kernel only logs it now and then.
+
+## Git deploys
+
+- `cannot fetch ...`: the URL is wrong, the repository is private (not
+  supported yet), or the server can't reach it. The previous site keeps
+  being served.
+- `/` returns 403 after a deploy: there is no `index.html` in the served
+  folder. Check `--path`, or turn on `autoindex`.
+- Auto-update doesn't seem to run:
+  `sudo journalctl -u snap.<name>.git-auto-update.service`.
+  `<name> rollback` turns auto-update off on purpose.
 
 Any other AppArmor denial for `snap.<name>.*` is worth a look:
 

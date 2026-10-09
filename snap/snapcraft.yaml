@@ -3,7 +3,7 @@
 # Your content goes in site/, your nginx rules in nginx/. See README.md.
 name: hello-nginx
 base: core24
-version: '2.0.0'
+version: '2.1.0'
 title: Hello nginx
 # This template is MIT; the bundled nginx is BSD-2-Clause.
 license: MIT AND BSD-2-Clause
@@ -20,6 +20,13 @@ description: |
   replacing the demo page with your website, and you get a snap of your
   own that contains your site and the nginx server that serves it.
   Source and documentation: https://github.com/carlosbravoa/hello-nginx
+
+  No build needed? The snap can also serve a public git repository with
+  your static files. It fetches the latest commit, serves it, and can
+  follow the branch as you push, with one-command rollback:
+
+    sudo hello-nginx deploy https://github.com/me/my-site.git
+    sudo hello-nginx auto-update 15m
 
   Why snap a whole site? The content is versioned with the server:
 
@@ -44,7 +51,7 @@ confinement: strict
 hooks:
   configure:
     plugs:
-      - network        # checks whether a new port is already taken
+      - network        # checks whether a new port is taken; git fetch
       - network-bind   # `nginx -t` opens the listening sockets while validating
 
 apps:
@@ -64,6 +71,15 @@ apps:
     plugs:
       - network        # outgoing connections, e.g. proxy_pass in nginx/site.conf
       - network-bind
+
+  # Runs `<snap> update` when git.auto-update is due (off by default).
+  git-auto-update:
+    command: bin/git-auto-update
+    daemon: oneshot
+    timer: 00:00-24:00/288   # every 5 minutes
+    plugs:
+      - network
+      - network-bind   # applying a deploy runs `nginx -t`
 
 parts:
   # nginx from the Ubuntu archive, trimmed to the binary and mime.types.
@@ -88,6 +104,32 @@ parts:
       - -usr/share/perl5
       - -usr/bin/debconf*
       - -usr/sbin/dpkg-*
+      - -var
+
+  # git, for serving a site from a repository (git.repo). Perl and the
+  # interactive tools are not needed for fetch and checkout.
+  git:
+    plugin: nil
+    stage-packages:
+      - git
+    prime:
+      - -usr/share/doc
+      - -usr/share/man
+      - -usr/share/lintian
+      - -usr/share/perl*
+      - -usr/share/gitweb
+      - -usr/share/git-core/contrib
+      - -usr/lib/*/perl*
+      - -usr/lib/*/libperl*
+      - -usr/lib/*/libgdbm*
+      - -etc/perl
+      - -usr/bin/perl*
+      - -usr/lib/git-core/git-gui*
+      - -usr/lib/git-core/git-svn
+      - -usr/lib/git-core/git-cvs*
+      - -usr/lib/git-core/git-archimport
+      - -usr/lib/git-core/git-send-email
+      - -usr/lib/git-core/git-instaweb
       - -var
 
   # Service scripts, config templates and developer pages. You should not

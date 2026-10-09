@@ -20,6 +20,15 @@
   </div>
 
   <div class="card">
+    <h2>Or serve a git repository</h2>
+    <p>No build needed: point this snap at a public repository with your static files.
+       It fetches the latest commit and serves it, and can follow the branch as you push.</p>
+<pre>sudo hello-nginx deploy https://github.com/me/my-site.git
+sudo hello-nginx auto-update 15m
+sudo hello-nginx rollback        # back to the previous commit</pre>
+  </div>
+
+  <div class="card">
     <h2>Why snap a whole site</h2>
     <p>The content is versioned with the server:</p>
     <ul>

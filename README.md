@@ -26,6 +26,17 @@ The published [`hello-nginx`](https://snapcraft.io/hello-nginx) snap is this
 template built as is: `sudo snap install hello-nginx --edge` shows what you
 get.
 
+**No build needed?** The snap can also serve a public git repository
+directly. That's the quickest way to get a static site online:
+
+```sh
+sudo snap install hello-nginx --edge
+sudo hello-nginx deploy https://github.com/me/my-site.git
+```
+
+See [docs/git-deploy.md](docs/git-deploy.md). Build your own snap from the
+template when you want the site and the server released together.
+
 ## Quick start
 
 Start a repository from this template: **Use this template** on
@@ -91,6 +102,8 @@ sudo my-site start | stop | restart | reload
 sudo my-site port <n>            # default 8080
 sudo my-site autoindex on|off    # directory listings
 sudo my-site dev-pages on|off    # /_hello/ developer pages (default off)
+sudo my-site deploy <git-url> [--branch B] [--path P]
+sudo my-site update | rollback | reset | auto-update off|15m|1h
      my-site status | config | check | version
 sudo my-site test                # validate the nginx configuration
 sudo my-site logs [access|error] [-f] [-n N]
@@ -111,6 +124,8 @@ Invalid values are rejected and the previous ones stay in place.
   settings.
 - [docs/deploying.md](docs/deploying.md): publishing, channels, servers,
   cloud-init, rollback, multiple architectures.
+- [docs/git-deploy.md](docs/git-deploy.md): serving a git repository
+  instead of the built-in site, with update, rollback and auto-update.
 - [docs/troubleshooting.md](docs/troubleshooting.md): logs, failed installs,
   confinement, known harmless messages.
 - [AGENTS.md](AGENTS.md): how the template works internally, its rules and

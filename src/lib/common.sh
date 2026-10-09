@@ -55,6 +55,7 @@ validate_settings() {
     validate_port_free "$(get_port)"
     validate_bool autoindex "$(get_autoindex)"
     validate_bool dev-pages "$(get_devpages)"
+    validate_git_settings
 }
 
 # ---------------------------------------------------------------- rendering
@@ -67,7 +68,11 @@ ensure_dirs() {
 
 render_config() { # out_conf
     local out="$1" port autoindex devpages ai v6 dev dev_snippet nginx_version json_tmp
+    local root id source=built-in
     port=$(get_port)
+    root=$(site_root)
+    id=$(git_current)
+    [ "$root" = "$SITE_DIR" ] || source=git
     autoindex=$(get_autoindex)
     devpages=$(get_devpages)
 
@@ -92,6 +97,7 @@ render_config() { # out_conf
     sed -e "s|@SNAP@|$(sed_escape "$SNAP")|g" \
         -e "s|@SNAP_DATA@|$(sed_escape "$SNAP_DATA")|g" \
         -e "s|@SNAP_COMMON@|$(sed_escape "$SNAP_COMMON")|g" \
+        -e "s|@SITE_ROOT@|$(sed_escape "$root")|g" \
         -e "s|@PORT@|$port|g" \
         -e "s|@AUTOINDEX@|$ai|g" \
         -e "s|@LISTEN_V6@|$(sed_escape "$v6")|" \
@@ -108,7 +114,12 @@ render_config() { # out_conf
   "snap_revision": "$SNAP_REVISION",
   "nginx_version": "$nginx_version",
   "port": $port,
-  "site": "$SITE_DIR",
+  "site": "$root",
+  "source": "$source",
+  "git_repo": "$(git_info "$id" repo)",
+  "git_branch": "$(git_info "$id" branch)",
+  "git_commit": "$(git_info "$id" commit)",
+  "deployed_at": "$(git_info "$id" date)",
   "autoindex": $autoindex,
   "dev_pages": $devpages,
   "access_log": "$LOG_DIR/access.log",
@@ -153,3 +164,5 @@ service_active() {
 require_root() {
     [ "$(id -u)" -eq 0 ] || die "this command changes the server; run it with sudo:  sudo $SNAP_INSTANCE_NAME $*"
 }
+
+. "$SNAP/lib/git.sh"

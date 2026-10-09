@@ -118,9 +118,93 @@ check "check" "$N" check
 check "status" "$N" status
 check "logs" "$N" logs -n 5
 
+section "git deploy"
+# A local repository served over plain HTTP (git's "dumb" protocol), so the
+# test does not depend on the internet and can push new commits.
+GW=/root/git-work; GS=/root/git-srv; R=http://127.0.0.1:8765/site.git
+publish() { # message -> commit in $GW and update the served bare repo
+    git -C "$GW" add -A && git -C "$GW" commit -qm "$1" &&
+    git -C "$GW" push -q "$GS/site.git" --all && git -C "$GS/site.git" update-server-info
+}
+body() { curl -s --max-time 5 "$U/${1:-}"; }
+serves() { body "${2:-}" | grep -q "$1"; }
+if ! command -v git >/dev/null; then
+    fail "git is not installed in the test container"
+else
+    rm -rf "$GW" "$GS"; mkdir -p "$GW/public" "$GS"
+    git -C "$GW" init -q -b main
+    git -C "$GW" config user.email test@example.com; git -C "$GW" config user.name test
+    echo '<h1>git v1</h1>' > "$GW/index.html"
+    echo '<h1>public folder</h1>' > "$GW/public/index.html"
+    ln -s /etc/passwd "$GW/leak"
+    git -C "$GW" add -A && git -C "$GW" commit -qm v1
+    git clone -q --bare "$GW" "$GS/site.git" && git -C "$GS/site.git" update-server-info
+    python3 -m http.server 8765 --bind 127.0.0.1 --directory "$GS" >/dev/null 2>&1 &
+    gitsrv=$!
+    sleep 1
+
+    check "deploy" "$N" deploy "$R"
+    check "serves the repository" serves 'git v1'
+    check "symlinks are not followed" sh -c "! curl -s $U/leak | grep -q root:"
+    check "status shows the repository" sh -c "$N status | grep -q '$R'"
+    check "update with nothing new" sh -c "$N update | grep -q 'Already up to date'"
+    echo '<h1>git v2</h1>' > "$GW/index.html"; publish v2
+    check "update" "$N" update
+    check "serves the new commit" serves 'git v2'
+
+    check "deploy a subfolder" "$N" deploy "$R" --path public
+    check "serves the subfolder" serves 'public folder'
+    check "rejects a missing folder" sh -c "! $N deploy $R --path nope"
+    check "rejects a non-http URL" sh -c "! $N deploy file:///etc"
+    check "rejects '..' in the path" sh -c "! $N deploy $R --path ../x"
+    check "rejects an unreachable repo" sh -c "! $N deploy http://127.0.0.1:1/x.git"
+    check "still serves the subfolder" serves 'public folder'
+    check "rollback" "$N" rollback
+    check "serves the previous deploy" serves 'git v2'
+    check "settings follow the rollback" sh -c "$N config | grep -q 'git.path *$'"
+
+    git -C "$GW" checkout -q -b staging
+    echo '<h1>git staging</h1>' > "$GW/index.html"; publish staging
+    check "snap set git.branch=staging" snap set "$N" git.branch=staging
+    check "serves the branch" serves 'git staging'
+    check "snap set rejects a bad URL" sh -c "! snap set $N git.repo=nonsense"
+    check "snap set rejects an unreachable repo" sh -c "! snap set $N git.repo=http://127.0.0.1:1/x.git"
+    check "still serves the branch" serves 'git staging'
+
+    check "auto-update 5m" "$N" auto-update 5m
+    check "rejects auto-update 1m" sh -c "! $N auto-update 1m"
+    check "rejects auto-update soon" sh -c "! $N auto-update soon"
+    echo '<h1>git auto</h1>' > "$GW/index.html"; publish auto
+    rm -f "/var/snap/$N/common/git/last-check"
+    # `snap start` would only start the systemd timer; run the service itself.
+    check "auto-update timer runs" systemctl start "snap.$N.git-auto-update.service"
+    check "timer deployed the new commit" serves 'git auto'
+    check "rollback turns auto-update off" sh -c "$N rollback | grep -q 'Auto-update turned off'"
+    check "auto-update is off" sh -c "$N config | grep -q 'git.auto-update *off'"
+    check "update" "$N" update
+    check "refresh keeps the git site" snap install --dangerous "$SNAP_FILE"
+    check "serves the git site after refresh" serves 'git auto'
+    check "keeps at most 5 deploys" sh -c "[ \$(ls -d /var/snap/$N/common/git/deploys/*/ | wc -l) -le 5 ]"
+
+    check "reset" "$N" reset
+    check "serves the built-in site again" sh -c "curl -s $U/ | cmp -s - $SITE/index.html"
+    check "git data removed" sh -c "[ ! -e /var/snap/$N/common/git ]"
+    kill "$gitsrv" 2>/dev/null; wait "$gitsrv" 2>/dev/null
+
+    # https and shallow fetch against a real host, when there is internet.
+    if curl -s -o /dev/null --max-time 5 https://github.com; then
+        check "deploy from GitHub over https" "$N" deploy https://github.com/carlosbravoa/hello-nginx --path site
+        check "serves the GitHub site" serves 'Hello'
+        check "reset" "$N" reset
+    else
+        warn "no internet: skipped the GitHub deploy"
+    fi
+fi
+
 section "non-root user"
 check "status works without sudo" su - ubuntu -c "$N status"
 check "port refuses without sudo" sh -c "! su - ubuntu -c '$N port 9000'"
+check "deploy refuses without sudo" sh -c "! su - ubuntu -c '$N deploy https://example.com/x.git'"
 
 section "refresh"
 check "port 8181 before refresh" "$N" port 8181

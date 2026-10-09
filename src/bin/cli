@@ -20,6 +20,15 @@ Settings (need sudo):
   autoindex on|off      Directory listings for folders without index.html
   dev-pages on|off      Developer pages under /_hello/ (default off)
 
+Serve a git repository instead of the built-in site (need sudo):
+  deploy <url> [--branch B] [--path P]
+                        Fetch the repository and serve it (P: subfolder)
+  update                Fetch again; deploy if the branch has new commits
+  auto-update off|<n>m|<n>h
+                        Run update periodically (default off)
+  rollback              Serve the previous deploy (turns auto-update off)
+  reset                 Back to the built-in site
+
 Information:
   status                Service state, URL and what is being served
   config                Show the current settings
@@ -31,6 +40,7 @@ Information:
   help                  Show this help
 
 Settings can also be changed with:  sudo snap set $PROG port=80 dev-pages=true
+                                    sudo snap set $PROG git.repo=https://...
 EOF
 }
 
@@ -61,6 +71,90 @@ set_and_apply() {
     fi
 }
 
+# Apply a new web root; on failure go back to the previous deploy and die.
+apply_site() { # previous-id
+    if ! (apply_config) || ! reload_if_running; then
+        git_restore "$1"
+        (apply_config && reload_if_running) >/dev/null 2>&1 || true
+        die "the site was not changed (details: $PROG logs error)"
+    fi
+}
+
+set_or_unset() { # key value
+    if [ -n "$2" ]; then snapctl set "$1=$2"; else snapctl unset "$1"; fi
+}
+
+cmd_deploy() {
+    local repo= branch= path= prev old_repo old_branch old_path
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --branch) shift; branch=${1:?--branch needs a name} ;;
+            --branch=*) branch=${1#*=} ;;
+            --path) shift; path=${1:?--path needs a folder} ;;
+            --path=*) path=${1#*=} ;;
+            -*) die "unknown deploy option '$1'" ;;
+            *) [ -z "$repo" ] || die "usage: $PROG deploy <url> [--branch B] [--path P]"; repo=$1 ;;
+        esac
+        shift
+    done
+    [ -n "$repo" ] || die "usage: $PROG deploy <url> [--branch B] [--path P]"
+    path=${path%/}
+    validate_git_repo "$repo"
+    validate_git_branch "$branch"
+    validate_git_path "$path"
+
+    old_repo=$(get_git_repo); old_branch=$(get_git_branch); old_path=$(get_git_path)
+    prev=$(git_current)
+    snapctl set git.repo="$repo"
+    set_or_unset git.branch "$branch"
+    set_or_unset git.path "$path"
+    if ! (git_sync update) ||
+       { [ "$(git_current)" != "$prev" ] && ! (apply_site "$prev"); }; then
+        set_or_unset git.repo "$old_repo"
+        set_or_unset git.branch "$old_branch"
+        set_or_unset git.path "$old_path"
+        die "nothing was deployed"
+    fi
+}
+
+cmd_update() {
+    local prev
+    [ -n "$(get_git_repo)" ] || die "no repository configured (see: $PROG deploy)"
+    prev=$(git_current)
+    git_sync update
+    [ "$(git_current)" = "$prev" ] || apply_site "$prev"
+}
+
+cmd_rollback() {
+    local prev id
+    prev=$(git_current)
+    id=$(git_previous_id)
+    [ -n "$id" ] || die "no earlier deploy to roll back to"
+    git_set_current "$id"
+    apply_site "$prev"
+    # Keep the settings in line with what is served, so the configure hook
+    # (refresh, snap set) does not redeploy.
+    snapctl set git.repo="$(git_info "$id" repo)"
+    set_or_unset git.branch "$(git_info "$id" branch)"
+    set_or_unset git.path "$(git_info "$id" path)"
+    echo "Serving ${id#*-} again (deployed $(git_info "$id" date))."
+    if [ "$(get_git_autoupdate)" != off ]; then
+        snapctl set git.auto-update=off
+        echo "Auto-update turned off so it does not undo the rollback. Turn it back on with: $PROG auto-update <interval>"
+    fi
+}
+
+cmd_reset() {
+    local prev
+    prev=$(git_current)
+    [ -n "$prev" ] || [ -n "$(get_git_repo)" ] || { echo "Already serving the built-in site."; return 0; }
+    snapctl unset git
+    git_set_current ""
+    apply_site "$prev"
+    git_forget_all
+    echo "Serving the built-in site."
+}
+
 on_off() { # name value -> true/false
     case "$2" in
         on|true|yes|1) echo true ;;
@@ -70,11 +164,20 @@ on_off() { # name value -> true/false
 }
 
 cmd_status() {
-    local state
+    local state id branch commit
     state=$(snapctl services "$SERVICE" | awk 'NR==2 {print $2 "/" $3}')
     echo "Service:   $SERVICE ($state)"
     echo "URL:       $(url)"
-    echo "Serving:   $SITE_DIR  (version $SNAP_VERSION, revision $SNAP_REVISION)"
+    id=$(git_current)
+    if [ -n "$id" ]; then
+        branch=$(git_info "$id" branch)
+        echo "Serving:   $(git_info "$id" repo)${branch:+ ($branch)}"
+        commit=$(git_info "$id" commit)
+        echo "           commit ${commit:0:12}, deployed $(git_info "$id" date)"
+        echo "           auto-update: $(get_git_autoupdate)"
+    else
+        echo "Serving:   built-in site $SITE_DIR  (version $SNAP_VERSION, revision $SNAP_REVISION)"
+    fi
     if [ "$(get_devpages)" = true ]; then
         echo "Dev pages: $(url)_hello/"
     fi
@@ -82,9 +185,13 @@ cmd_status() {
 }
 
 cmd_config() {
-    printf '%-10s %s\n' port "$(get_port)"
-    printf '%-10s %s\n' autoindex "$(get_autoindex)"
-    printf '%-10s %s\n' dev-pages "$(get_devpages)"
+    printf '%-16s %s\n' port "$(get_port)"
+    printf '%-16s %s\n' autoindex "$(get_autoindex)"
+    printf '%-16s %s\n' dev-pages "$(get_devpages)"
+    if [ -n "$(get_git_repo)" ]; then
+        printf '%-16s %s\n' git.repo "$(get_git_repo)" git.branch "$(get_git_branch)" \
+            git.path "$(get_git_path)" git.auto-update "$(get_git_autoupdate)"
+    fi
 }
 
 cmd_check() {
@@ -155,6 +262,17 @@ case "$cmd" in
         require_root "$cmd"
         set_and_apply dev-pages "$(on_off dev-pages "${1:-}")"
         [ "$(get_devpages)" = false ] || echo "Developer pages: $(url)_hello/" ;;
+    deploy)   require_root "$cmd"; cmd_deploy "$@" ;;
+    update)   require_root "$cmd"; cmd_update ;;
+    rollback) require_root "$cmd"; cmd_rollback ;;
+    reset)    require_root "$cmd"; cmd_reset ;;
+    auto-update)
+        require_root "$cmd"
+        [ $# -eq 1 ] || die "usage: $PROG auto-update off|<n>m|<n>h"
+        validate_git_autoupdate "$1"
+        [ -n "$(get_git_repo)" ] || [ "$1" = off ] || die "no repository configured (see: $PROG deploy)"
+        snapctl set git.auto-update="$1"
+        echo "Auto-update: $1" ;;
     status)  cmd_status ;;
     config)  cmd_config ;;
     check)   cmd_check ;;

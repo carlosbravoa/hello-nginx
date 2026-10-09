@@ -5,8 +5,16 @@ set -e
 . "$SNAP/lib/common.sh"
 
 validate_settings
-apply_config
 
-if service_active; then
-    snapctl restart --reload "$SERVICE"
+# Deploys from git when git.repo/branch/path changed (not on every refresh).
+prev=$(git_current)
+git_sync sync
+
+if ! (apply_config) || { service_active && ! snapctl restart --reload "$SERVICE"; }; then
+    git_restore "$prev"
+    apply_config
+    if service_active; then snapctl restart --reload "$SERVICE"; fi
+    die "the new configuration was not applied"
 fi
+
+[ -n "$(get_git_repo)" ] || git_forget_all

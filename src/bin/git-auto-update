@@ -1,0 +1,14 @@
+#!/bin/bash
+# Timer (every 5 minutes): run `<snap> update` when git.auto-update is due.
+set -e
+. "$SNAP/lib/common.sh"
+
+[ -n "$(get_git_repo)" ] || exit 0
+interval=$(autoupdate_seconds "$(get_git_autoupdate)") || exit 0
+[ "$interval" -gt 0 ] || exit 0
+
+last=$(cat "$GIT_LAST_CHECK" 2>/dev/null || echo 0)
+# 30s of slack so a 5m interval is not skipped by timer jitter.
+[ $(( $(date +%s) - last )) -ge $(( interval - 30 )) ] || exit 0
+
+exec "$SNAP/bin/cli" update

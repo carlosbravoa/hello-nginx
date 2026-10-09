@@ -163,6 +163,10 @@ Runtime settings, per server, kept across refreshes:
 | `port` | `8080` | `sudo <name> port 80` | `sudo snap set <name> port=80` |
 | `autoindex` | `false` | `sudo <name> autoindex on` | `sudo snap set <name> autoindex=true` |
 | `dev-pages` | `false` | `sudo <name> dev-pages on` | `sudo snap set <name> dev-pages=true` |
+| `git.repo`, `git.branch`, `git.path`, `git.auto-update` | unset | `sudo <name> deploy <url>` | `sudo snap set <name> git.repo=<url>` |
+
+The `git.*` settings serve a git repository instead of the site in `site/`;
+see [git-deploy.md](git-deploy.md).
 
 To change a default, edit `DEFAULT_PORT` / the getters in
 `src/lib/common.sh` and the `snapctl set` line in `snap/hooks/install`.
