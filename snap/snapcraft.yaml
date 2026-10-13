@@ -68,6 +68,7 @@ apps:
     reload-command: bin/server-reload
     daemon: simple
     restart-condition: on-failure
+    restart-delay: 2s   # e.g. port taken at boot: retry calmly, not every 100ms
     plugs:
       - network        # outgoing connections, e.g. proxy_pass in nginx/site.conf
       - network-bind
