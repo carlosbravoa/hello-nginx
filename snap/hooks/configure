@@ -11,9 +11,14 @@ prev=$(git_current)
 git_sync sync
 
 if ! (apply_config) || { service_active && ! snapctl restart --reload "$SERVICE"; }; then
-    git_restore "$prev"
-    apply_config
-    if service_active; then snapctl restart --reload "$SERVICE"; fi
+    # Settings cannot be restored here: snapctl still returns the rejected
+    # values, and snapd discards them when this hook fails. Only a new deploy
+    # needs undoing, so nginx goes back to the previous one.
+    if [ "$(git_current)" != "$prev" ]; then
+        git_restore "$prev"
+        apply_config
+        if service_active; then snapctl restart --reload "$SERVICE"; fi
+    fi
     die "the new configuration was not applied"
 fi
 

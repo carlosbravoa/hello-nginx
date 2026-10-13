@@ -102,6 +102,10 @@ sudo ufw allow 80/tcp                # if ufw is enabled
 
 The server starts at boot. Logs are under `/var/snap/<name>/common/logs/`
 and the service is `snap.<name>.server` (`journalctl -u snap.<name>.server`).
+The logs are rotated daily by the `snap.<name>.log-rotate` timer: the
+current file is `access.log`, older ones are `access.log.1.gz` to
+`access.log.14.gz` (same for `error.log`). Empty logs are not rotated. To
+rotate right now: `sudo snap run <name>.log-rotate`.
 
 ### Updates and rollback
 

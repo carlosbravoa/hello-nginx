@@ -37,12 +37,13 @@ src/bin/cli              the management CLI (app named after the snap)
 src/bin/server-launch    daemon: apply_config, record live port, exec nginx
 src/bin/server-reload    reload-command: apply_config, HUP, confirm via probe
 src/bin/git-auto-update  timer app (every 5 min): `<snap> update` when due
+src/bin/log-rotate       timer app (daily): rotate the logs, `nginx -s reopen`
 src/conf/nginx.conf.in   main nginx template (@PLACEHOLDERS@)
 src/conf/dev-pages.conf.in  /_hello/ locations, included when dev-pages=true
 src/www/hello/           developer dashboard (static HTML/JS)
 scripts/rename.sh        rename the snap and its command
 tests/lxd-smoke.sh       host driver: LXD container, push, run checks, AppArmor scan
-tests/smoke-checks.sh    runs inside the container: ~55 checks
+tests/smoke-checks.sh    runs inside the container: ~100 checks
 docs/                    user documentation
 ```
 
@@ -51,8 +52,10 @@ docs/                    user documentation
 ```
 snap install
   -> install hook: snapctl set port=8080 autoindex=false dev-pages=false
-  -> configure hook: validate_settings, apply_config
   -> server daemon: server-launch -> apply_config -> echo port > run/live-port -> exec nginx
+  -> configure hook: validate_settings, git_sync, apply_config, confirmed reload
+     (snapd starts services before it runs the configure hook, on install
+     and on refresh alike)
 
 sudo <snap> port 9000            (CLI, src/bin/cli)
   -> validate_port, validate_port_free
@@ -75,7 +78,13 @@ sudo <snap> deploy <url>         (or snap set git.repo=<url>)
 ```
 
 The configure hook only fetches when `git.repo/branch/path` differ from
-the current deploy, so refreshes never hit the network.
+the current deploy, so refreshes never hit the network. If the hook fails,
+snapd discards the new settings itself; inside the hook `snapctl get` still
+returns them, so the hook can only undo a deploy, not re-apply old values.
+
+`log-rotate` (daily timer) renames `access.log`/`error.log` to `.1`, shifts
+older copies up to `.14.gz`, and runs `nginx -s reopen` so nginx stops
+writing to the renamed files, then compresses `.1`.
 
 `apply_config` renders into a `mktemp` file, runs `nginx -t` on it, then
 moves it into place. A configuration that fails `nginx -t` never goes live.
@@ -100,8 +109,11 @@ generated `nginx.conf`, `config.json`, the pid file and temp dirs.
   `render_config`. Escape substituted values with `sed_escape`.
 - Users own `nginx/*.conf`. The generated part must keep working whatever
   they add, and must not define `location /` (theirs does).
-- Keep `server_tokens off` and the dotfile rule
+- Keep `server_tokens off`, `absolute_redirect off` and the dotfile rule
   (`location ~ /\.(?!well-known/)`) ahead of the user include.
+- `/_hello/request` echoes request values through the `$hello_*` maps in
+  `nginx.conf.in`, which blank values that would break its JSON. Use them for
+  any new field that comes from the client.
 
 **Confinement.** Each of these was hit and fixed. Don't reintroduce them.
 - Any hook or app that runs `nginx -t` needs the `network-bind` plug:
@@ -148,8 +160,13 @@ generated `nginx.conf`, `config.json`, the pid file and temp dirs.
   `comm="git".*capname="dac_override"`.
 - Don't capture `git_sync` with `$(...)`. It takes a lock and sets an EXIT
   trap. Call it directly or in a `( )` subshell, then compare `git_current`.
+- Inside `if ! ( ... )`, `set -e` is off. Any step whose failure must stop
+  a deploy needs an explicit `|| return 1`, as `git_fetch` has in `git_sync`.
 - To run the timer service in a test, use `systemctl start
   snap.<name>.git-auto-update.service`. `snap start` only starts the timer.
+  That only works because its window is the whole day: snapd refuses to run
+  a timer app outside its window ("attempted to run ... outside of scheduled
+  time"), so `log-rotate` is run with `snap run <name>.log-rotate` instead.
 
 **Reloads**
 - `nginx -s reload` returns before the new workers serve. Anything that

@@ -68,7 +68,8 @@ it (see the reverse proxy recipe in
   nginx carries on. The smoke test ignores this line.
 - **`apparmor="DENIED" ... capname="setuid"` / `"setgid"`** in the kernel log
   for `snap.<name>.server`: the same thing seen from AppArmor.
-- **`[notice] ... signal process started`**: logged by every reload.
+- **`[notice] ... signal process started`**: logged by every reload and by
+  the daily log rotation.
 - **`apparmor="DENIED" ... comm="git" ... capname="dac_override"`** for
   `snap.<name>.<name>` or `snap.<name>.git-auto-update`, during a git
   deploy. This is an optional capability check: the same git steps run

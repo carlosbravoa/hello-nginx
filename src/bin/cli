@@ -72,9 +72,11 @@ set_and_apply() {
 }
 
 # Apply a new web root; on failure go back to the previous deploy and die.
-apply_site() { # previous-id
+# git_restore deletes the deploy that failed, which is right for a fresh
+# checkout. `keep` is for rollback, where it is an older deploy worth keeping.
+apply_site() { # previous-id [keep]
     if ! (apply_config) || ! reload_if_running; then
-        git_restore "$1"
+        if [ "${2:-}" = keep ]; then git_set_current "$1"; else git_restore "$1"; fi
         (apply_config && reload_if_running) >/dev/null 2>&1 || true
         die "the site was not changed (details: $PROG logs error)"
     fi
@@ -126,19 +128,20 @@ cmd_update() {
 }
 
 cmd_rollback() {
-    local prev id
+    local prev id commit
     prev=$(git_current)
     id=$(git_previous_id)
     [ -n "$id" ] || die "no earlier deploy to roll back to"
     git_set_current "$id"
-    apply_site "$prev"
+    apply_site "$prev" keep
     # Keep the settings in line with what is served, so the configure hook
     # (refresh, snap set) does not redeploy.
     snapctl set git.repo="$(git_info "$id" repo)"
     set_or_unset git.branch "$(git_info "$id" branch)"
     set_or_unset git.path "$(git_info "$id" path)"
-    echo "Serving ${id#*-} again (deployed $(git_info "$id" date))."
-    if [ "$(get_git_autoupdate)" != off ]; then
+    commit=$(git_info "$id" commit)
+    echo "Serving ${commit:0:12} again (deployed $(git_info "$id" date))."
+    if [ "$(autoupdate_seconds "$(get_git_autoupdate)")" != 0 ]; then
         snapctl set git.auto-update=off
         echo "Auto-update turned off so it does not undo the rollback. Turn it back on with: $PROG auto-update <interval>"
     fi
@@ -148,9 +151,11 @@ cmd_reset() {
     local prev
     prev=$(git_current)
     [ -n "$prev" ] || [ -n "$(get_git_repo)" ] || { echo "Already serving the built-in site."; return 0; }
-    snapctl unset git
+    # Switch the served site first: if that fails, settings and deploy stay
+    # consistent with each other.
     git_set_current ""
     apply_site "$prev"
+    snapctl unset git
     git_forget_all
     echo "Serving the built-in site."
 }

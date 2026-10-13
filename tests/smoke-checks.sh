@@ -72,6 +72,7 @@ check "dev-pages on" "$N" dev-pages on
 expect_code "/_hello/" "$U/_hello/" 200
 check "/_hello/health says ok" sh -c "curl -s $U/_hello/health | grep -qx ok"
 check "/_hello/request is JSON" sh -c "curl -s $U/_hello/request | python3 -m json.tool"
+check "/_hello/request stays JSON with a quote in a header" sh -c "curl -s -A 'x\"y\\\\z' '$U/_hello/request?q=%22' | python3 -m json.tool"
 check "/_hello/config is JSON" sh -c "curl -s $U/_hello/config | python3 -m json.tool"
 check "/_hello/status has counters" sh -c "curl -s $U/_hello/status | grep -q 'Active connections'"
 check "dev-pages off" "$N" dev-pages off
@@ -117,6 +118,13 @@ check "test" "$N" test
 check "check" "$N" check
 check "status" "$N" status
 check "logs" "$N" logs -n 5
+LOGS=/var/snap/$N/common/logs
+# Not via systemctl: snapd refuses to run a timer app outside its window.
+check "log rotation" snap run "$N.log-rotate"
+check "rotated log is compressed" test -s "$LOGS/access.log.1.gz"
+curl -s -o /dev/null "$U/after-rotation"
+check "nginx writes to the new access log" sh -c "grep -q after-rotation $LOGS/access.log"
+check "nginx writes to the new error log" sh -c "[ -f $LOGS/error.log ]"
 
 section "git deploy"
 # A local repository served over plain HTTP (git's "dumb" protocol), so the
@@ -145,6 +153,7 @@ else
 
     check "deploy" "$N" deploy "$R"
     check "serves the repository" serves 'git v1'
+    check "directory redirect is relative" sh -c "curl -sI $U/public | grep -qi '^location: /public/'"
     check "symlinks are not followed" sh -c "! curl -s $U/leak | grep -q root:"
     check "status shows the repository" sh -c "$N status | grep -q '$R'"
     check "update with nothing new" sh -c "$N update | grep -q 'Already up to date'"
@@ -154,10 +163,12 @@ else
 
     check "deploy a subfolder" "$N" deploy "$R" --path public
     check "serves the subfolder" serves 'public folder'
+    check "deploy ids are unique" sh -c "[ \$(sort /var/snap/$N/common/git/history | uniq -d | wc -l) -eq 0 ]"
     check "rejects a missing folder" sh -c "! $N deploy $R --path nope"
     check "rejects a non-http URL" sh -c "! $N deploy file:///etc"
     check "rejects '..' in the path" sh -c "! $N deploy $R --path ../x"
     check "rejects an unreachable repo" sh -c "! $N deploy http://127.0.0.1:1/x.git"
+    check "a failed fetch does not go on to a checkout" sh -c "! $N deploy http://127.0.0.1:1/x.git 2>&1 | grep -q 'cannot check out'"
     check "still serves the subfolder" serves 'public folder'
     check "rollback" "$N" rollback
     check "serves the previous deploy" serves 'git v2'

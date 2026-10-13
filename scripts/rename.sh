@@ -40,7 +40,7 @@ for f in "${files[@]}"; do
     sed -i -E "s/(^|[^/[:alnum:]-])$current\b/\1$new/g" "$f"
     echo "updated ${f#$ROOT/}"
 done
-sed -i "s/^title: .*/title: $title/" "$YAML"
+sed -i "s|^title: .*|title: $(printf '%s' "$title" | sed 's/[&|\\]/\\&/g')|" "$YAML"
 
 cat <<EOF
 

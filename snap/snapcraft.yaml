@@ -72,6 +72,13 @@ apps:
       - network        # outgoing connections, e.g. proxy_pass in nginx/site.conf
       - network-bind
 
+  # Daily log rotation: keeps 14 compressed copies of access.log and
+  # error.log and tells nginx to reopen them.
+  log-rotate:
+    command: bin/log-rotate
+    daemon: oneshot
+    timer: 03:00~04:00
+
   # Runs `<snap> update` when git.auto-update is due (off by default).
   git-auto-update:
     command: bin/git-auto-update

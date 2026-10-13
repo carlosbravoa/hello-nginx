@@ -61,7 +61,9 @@ Two files are included in the generated nginx configuration:
 | `nginx/http.conf` | `http { }` | `upstream`, `map`, `limit_req_zone`, `log_format` |
 
 The rest of the configuration is generated: listen ports, root, logs, gzip,
-temp paths, dotfile protection, developer pages. If an included file is
+temp paths, dotfile protection, relative redirects (`absolute_redirect off`,
+so `/dir` -> `/dir/` keeps working behind a proxy on another port),
+developer pages. If an included file is
 invalid, `nginx -t` fails during install and **the snap refuses to install**
 (snapd rolls back to the previous revision on refresh). Always run
 `tests/lxd-smoke.sh` before publishing.

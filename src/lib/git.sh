@@ -29,12 +29,16 @@ GIT_KEEP=5   # deploys kept on disk for rollback
 get_git_repo()       { snapctl get git.repo; }
 get_git_branch()     { snapctl get git.branch; }
 get_git_path()       { snapctl get git.path; }
-get_git_autoupdate() { v=$(snapctl get git.auto-update); echo "${v:-off}"; }
+get_git_autoupdate() { local v; v=$(snapctl get git.auto-update); echo "${v:-off}"; }
 
 # git from the snap, isolated from any system or user configuration.
-# libcurl (for https) is not in the base snap, hence LD_LIBRARY_PATH.
+# libcurl (for https) is not in the base snap, hence LD_LIBRARY_PATH. The
+# multiarch directory is found by globbing: `uname -m` does not match it on
+# armhf (armv7l vs arm-linux-gnueabihf) or ppc64el.
+for _d in "$SNAP"/usr/lib/*-linux-gnu*; do GIT_LIBDIR=$_d; break; done
+unset _d
 git() {
-    LD_LIBRARY_PATH="$SNAP/usr/lib/$(uname -m)-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    LD_LIBRARY_PATH="$GIT_LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     GIT_EXEC_PATH="$SNAP/usr/lib/git-core" \
     GIT_TEMPLATE_DIR="$SNAP/usr/share/git-core/templates" \
     GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
@@ -175,8 +179,11 @@ $out"
 # Prints the new id. Symlinks become plain files (core.symlinks=false), so
 # a repository cannot point nginx outside its own checkout.
 git_checkout() { # repo branch path commit
-    local repo=$1 branch=$2 path=$3 commit=$4 id dir index out
-    id="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:12}"
+    local repo=$1 branch=$2 path=$3 commit=$4 base id dir index out n=1
+    base="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:12}"
+    id=$base
+    # Same commit twice within a second (e.g. a path change): keep ids unique.
+    while [ -e "$GIT_DEPLOYS/$id" ]; do id="$base-$n"; n=$((n + 1)); done
     dir="$GIT_DEPLOYS/$id"
     mkdir -p "$dir"
     # A throwaway index: git refuses an existing empty file, so no mktemp.
@@ -248,7 +255,9 @@ git_sync() { # sync|update
     fi
 
     git_lock
-    commit=$(git_fetch "$repo" "$branch")
+    # Explicit check: callers run git_sync inside `if ! ( ... )`, where set -e
+    # is off, so a failed fetch must not fall through to the checkout.
+    commit=$(git_fetch "$repo" "$branch") || { git_unlock; return 1; }
     date +%s > "$GIT_LAST_CHECK"
     if [ -n "$cur" ] && [ "$(git_info "$cur" commit)" = "$commit" ] &&
        [ "$(git_info "$cur" repo)" = "$repo" ] && [ "$(git_info "$cur" branch)" = "$branch" ] &&

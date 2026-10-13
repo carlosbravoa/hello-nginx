@@ -39,6 +39,18 @@ http {
                     '"$http_user_agent" rt=$request_time';
     access_log @SNAP_COMMON@/logs/access.log main;
 
+    # Request values echoed by /_hello/request (dev-pages.conf.in). A quote,
+    # backslash or control character would break its JSON, so such values
+    # are replaced.
+    map $request_uri           $hello_request_uri      { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $request_uri; }
+    map $args                  $hello_args             { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $args; }
+    map $http_user_agent       $hello_user_agent       { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $http_user_agent; }
+    map $http_accept           $hello_accept           { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $http_accept; }
+    map $http_accept_encoding  $hello_accept_encoding  { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $http_accept_encoding; }
+    map $http_accept_language  $hello_accept_language  { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $http_accept_language; }
+    map $http_referer          $hello_referer          { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $http_referer; }
+    map $http_x_forwarded_for  $hello_x_forwarded_for  { '~[\x00-\x1f\x22\x5c]' "(not shown)"; default $http_x_forwarded_for; }
+
     # ---- nginx/http.conf
     include @SNAP@/conf/user/http.conf;
 
@@ -51,6 +63,11 @@ http {
         index index.html index.htm;
         autoindex @AUTOINDEX@;
         autoindex_localtime on;
+
+        # Redirects (e.g. /dir -> /dir/) as "Location: /dir/", not
+        # "http://host:@PORT@/dir/", so they also work behind a reverse proxy
+        # or TLS terminator on another port.
+        absolute_redirect off;
 
         # Never serve dotfiles (.git, .env, ...) except /.well-known/.
         location ~ /\.(?!well-known/) {

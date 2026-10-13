@@ -17,9 +17,9 @@ warn() { echo "warning: $*" >&2; }
 # ---------------------------------------------------------------- settings
 # Defaults live here and in the install hook. To add a setting, see AGENTS.md.
 
-get_port()      { v=$(snapctl get port);      echo "${v:-$DEFAULT_PORT}"; }
-get_autoindex() { v=$(snapctl get autoindex); echo "${v:-false}"; }
-get_devpages()  { v=$(snapctl get dev-pages); echo "${v:-false}"; }
+get_port()      { local v; v=$(snapctl get port);      echo "${v:-$DEFAULT_PORT}"; }
+get_autoindex() { local v; v=$(snapctl get autoindex); echo "${v:-false}"; }
+get_devpages()  { local v; v=$(snapctl get dev-pages); echo "${v:-false}"; }
 
 validate_port() {
     case "$1" in
@@ -67,12 +67,8 @@ ensure_dirs() {
 }
 
 render_config() { # out_conf
-    local out="$1" port autoindex devpages ai v6 dev dev_snippet nginx_version json_tmp
-    local root id source=built-in
+    local out="$1" port autoindex devpages ai v6 dev dev_snippet dev_tmp
     port=$(get_port)
-    root=$(site_root)
-    id=$(git_current)
-    [ "$root" = "$SITE_DIR" ] || source=git
     autoindex=$(get_autoindex)
     devpages=$(get_devpages)
 
@@ -86,9 +82,12 @@ render_config() { # out_conf
 
     dev_snippet="$SNAP_DATA/dev-pages.conf"
     if [ "$devpages" = true ]; then
+        dev_tmp=$(mktemp "$dev_snippet.XXXXXX")
         sed -e "s|@SNAP@|$(sed_escape "$SNAP")|g" \
             -e "s|@SNAP_DATA@|$(sed_escape "$SNAP_DATA")|g" \
-            "$SNAP/conf/dev-pages.conf.in" > "$dev_snippet"
+            "$SNAP/conf/dev-pages.conf.in" > "$dev_tmp"
+        chmod 644 "$dev_tmp"
+        mv "$dev_tmp" "$dev_snippet"
         dev="        include $dev_snippet;"
     else
         dev="        # developer pages disabled (dev-pages=false)"
@@ -97,38 +96,47 @@ render_config() { # out_conf
     sed -e "s|@SNAP@|$(sed_escape "$SNAP")|g" \
         -e "s|@SNAP_DATA@|$(sed_escape "$SNAP_DATA")|g" \
         -e "s|@SNAP_COMMON@|$(sed_escape "$SNAP_COMMON")|g" \
-        -e "s|@SITE_ROOT@|$(sed_escape "$root")|g" \
+        -e "s|@SITE_ROOT@|$(sed_escape "$(site_root)")|g" \
         -e "s|@PORT@|$port|g" \
         -e "s|@AUTOINDEX@|$ai|g" \
         -e "s|@LISTEN_V6@|$(sed_escape "$v6")|" \
         -e "s|@DEV_PAGES@|$(sed_escape "$dev")|" \
         -e "s|@GENERATION@|$GENERATION|g" \
         "$SNAP/conf/nginx.conf.in" > "$out"
+}
 
+# Settings and state as JSON, served at /_hello/config. Written by
+# apply_config once the configuration passed `nginx -t`, so it never
+# describes a rejected one.
+write_config_json() {
+    local root id source=built-in nginx_version tmp
+    root=$(site_root)
+    id=$(git_current)
+    [ "$root" = "$SITE_DIR" ] || source=git
     nginx_version=$("$SNAP/usr/sbin/nginx" -v 2>&1 | sed 's|.*nginx/||')
-    json_tmp=$(mktemp "$CONFIG_JSON.XXXXXX")
-    cat > "$json_tmp" <<EOF
+    tmp=$(mktemp "$CONFIG_JSON.XXXXXX")
+    cat > "$tmp" <<EOF
 {
   "snap": "$SNAP_INSTANCE_NAME",
   "snap_version": "$SNAP_VERSION",
   "snap_revision": "$SNAP_REVISION",
   "nginx_version": "$nginx_version",
-  "port": $port,
+  "port": $(get_port),
   "site": "$root",
   "source": "$source",
   "git_repo": "$(git_info "$id" repo)",
   "git_branch": "$(git_info "$id" branch)",
   "git_commit": "$(git_info "$id" commit)",
   "deployed_at": "$(git_info "$id" date)",
-  "autoindex": $autoindex,
-  "dev_pages": $devpages,
+  "autoindex": $(get_autoindex),
+  "dev_pages": $(get_devpages),
   "access_log": "$LOG_DIR/access.log",
   "error_log": "$LOG_DIR/error.log",
   "rendered_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
-    chmod 644 "$json_tmp"
-    mv "$json_tmp" "$CONFIG_JSON"
+    chmod 644 "$tmp"
+    mv "$tmp" "$CONFIG_JSON"
 }
 
 nginx_run() {
@@ -155,6 +163,7 @@ $out"
     fi
     chmod 644 "$tmp"
     mv "$tmp" "$NGINX_CONF"
+    write_config_json
 }
 
 service_active() {
