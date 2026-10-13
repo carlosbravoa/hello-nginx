@@ -1,0 +1,18 @@
+#!/bin/bash
+# stop-command for the server daemon: graceful shutdown. systemd would
+# otherwise SIGTERM the whole cgroup, which is nginx's fast shutdown and
+# drops in-flight requests on every `stop`, `restart` and refresh. SIGQUIT
+# lets workers finish what they are serving; worker_shutdown_timeout in
+# nginx.conf.in bounds that. If the master is still alive when this
+# returns, systemd's stop-timeout takes over.
+set -e
+. "$SNAP/lib/common.sh"
+
+pid=$(cat "$SNAP_DATA/run/nginx.pid" 2>/dev/null || true)
+[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || exit 0
+kill -QUIT "$pid"
+for _ in $(seq 200); do
+    kill -0 "$pid" 2>/dev/null || exit 0
+    sleep 0.1
+done
+warn "nginx (pid $pid) still running 20s after SIGQUIT; leaving it to systemd"

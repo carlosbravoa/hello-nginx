@@ -63,7 +63,15 @@ validate_settings() {
 sed_escape() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
 
 ensure_dirs() {
+    local f
     mkdir -p "$SNAP_DATA/run" "$SNAP_DATA/tmp" "$LOG_DIR"
+    # Logs start as 0664 root:root. When nginx reopens them (log-rotate) it
+    # chowns the owner to the worker user but keeps mode and group, so root
+    # processes (nginx -t, the next start) can still write them through the
+    # group bit. 0644 would lock root out: no dac_override in confinement.
+    for f in "$LOG_DIR/access.log" "$LOG_DIR/error.log"; do
+        [ -e "$f" ] || ( umask 002; : > "$f" )
+    done
 }
 
 render_config() { # out_conf

@@ -47,6 +47,7 @@ U=http://127.0.0.1:8080
 
 check "service is active" sh -c "snap services $N.server | grep -q ' active'"
 check "listening on 8080" wait_http 8080
+check "workers run as snap_daemon" sh -c "ps -o user= -C nginx | grep -q snap_daemon"
 
 section "site"
 expect_code "GET /" "$U/" 200
@@ -99,9 +100,15 @@ expect_code "still serving on 8080" "$U/" 200
 kill "$busy" 2>/dev/null; wait "$busy" 2>/dev/null
 check "autoindex on" "$N" autoindex on
 check "autoindex off" "$N" autoindex off
+check "snap set rejects auto-update without a repository" sh -c "! snap set $N git.auto-update=15m"
 
 section "service control"
+t0=$(date +%s)
 check "stop" "$N" stop
+secs=$(( $(date +%s) - t0 ))
+# server-stop waits for in-flight requests (none here), so this is quick.
+if [ "$secs" -lt 15 ]; then ok "stop took ${secs}s"; else fail "stop took ${secs}s (stop-command stuck?)"; fi
+check "stop was graceful (no SIGTERM in the journal)" sh -c "! journalctl -u snap.$N.server --no-pager | grep -q 'code=killed'"
 check "stopped and disabled" sh -c "snap services $N.server | grep -q 'disabled  *inactive'"
 check "check fails while stopped" sh -c "! $N check"
 check "start" "$N" start
@@ -172,6 +179,10 @@ else
     check "still serves the subfolder" serves 'public folder'
     check "rollback" "$N" rollback
     check "serves the previous deploy" serves 'git v2'
+    check "rollback again" "$N" rollback
+    check "goes back to what was served before the rollback" serves 'public folder'
+    check "rollback once more" "$N" rollback
+    check "serves the previous deploy again" serves 'git v2'
     check "settings follow the rollback" sh -c "$N config | grep -q 'git.path *$'"
 
     git -C "$GW" checkout -q -b staging
@@ -225,7 +236,9 @@ check "setting kept" sh -c "$N config | grep -q 'port *8181'"
 check "port back to 8080" "$N" port 8080
 
 section "error log"
-errs=$(grep -E '\[(emerg|alert|crit)\]' "/var/snap/$N/common/logs/error.log" | grep -v 'initgroups(root, 0) failed' || true)
+# initgroups: workers dropping to snap_daemon; seccomp refuses setgroups()
+# and nginx carries on. Harmless, see docs/troubleshooting.md.
+errs=$(grep -E '\[(emerg|alert|crit)\]' "/var/snap/$N/common/logs/error.log" | grep -vE 'initgroups\(snap_daemon, [0-9]+\) failed' || true)
 if [ -z "$errs" ]; then ok "no emerg/alert/crit entries"; else fail "error log:"; echo "$errs" | tail -n 5 | sed 's/^/         /'; fi
 
 section "remove"

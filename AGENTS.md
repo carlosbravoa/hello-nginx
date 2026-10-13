@@ -36,6 +36,7 @@ src/lib/git.sh           git.* settings, fetch/checkout/rollback, site_root
 src/bin/cli              the management CLI (app named after the snap)
 src/bin/server-launch    daemon: apply_config, record live port, exec nginx
 src/bin/server-reload    reload-command: apply_config, HUP, confirm via probe
+src/bin/server-stop      stop-command: SIGQUIT, wait for the master to exit
 src/bin/git-auto-update  timer app (every 5 min): `<snap> update` when due
 src/bin/log-rotate       timer app (daily): rotate the logs, `nginx -s reopen`
 src/conf/nginx.conf.in   main nginx template (@PLACEHOLDERS@)
@@ -43,7 +44,7 @@ src/conf/dev-pages.conf.in  /_hello/ locations, included when dev-pages=true
 src/www/hello/           developer dashboard (static HTML/JS)
 scripts/rename.sh        rename the snap and its command
 tests/lxd-smoke.sh       host driver: LXD container, push, run checks, AppArmor scan
-tests/smoke-checks.sh    runs inside the container: ~100 checks
+tests/smoke-checks.sh    runs inside the container: ~110 checks
 docs/                    user documentation
 ```
 
@@ -137,9 +138,17 @@ generated `nginx.conf`, `config.json`, the pid file and temp dirs.
 - Not every coreutils binary is executable in confinement (`comm` is
   denied). Prefer bash builtins. If you add a tool, run the smoke test and
   look at the AppArmor section.
-- nginx workers log `initgroups(root, 0) failed` and the kernel logs
-  `capname="setuid"`/`"setgid"` denials. Both are expected and harmless.
-  The tests filter exactly these. Don't widen the filters.
+- nginx workers run as `snap_daemon` (`system-usernames` in snapcraft.yaml,
+  `user` in nginx.conf.in); the master stays root. On `nginx -s reopen`
+  the master chowns the log files to that user. Root has no
+  `dac_override` in confinement, so the logs must stay group root, mode
+  0664, or `nginx -t` and the next start fail. `ensure_dirs` creates them
+  that way and `log-rotate` recreates them before the reopen. Nothing else
+  may chown or chmod them.
+- Workers log `initgroups(snap_daemon, <gid>) failed`: seccomp refuses
+  `setgroups()`, nginx carries on. The error-log check filters exactly that
+  line, and the AppArmor scan filters only git's `dac_override`. Don't
+  widen either filter.
 - After an AppArmor-relevant interface connects, workers already running
   keep stale access until restarted. That matters if you ever add an
   interface such as `removable-media`: add a `connect-plug-<plug>` hook that
@@ -174,7 +183,11 @@ generated `nginx.conf`, `config.json`, the pid file and temp dirs.
   a timer app outside its window ("attempted to run ... outside of scheduled
   time"), so `log-rotate` is run with `snap run <name>.log-rotate` instead.
 
-**Reloads**
+**Stops and reloads**
+- `snap stop`, `restart` and refresh run `server-stop` (SIGQUIT, graceful).
+  Without it systemd SIGTERMs the cgroup, nginx's fast shutdown.
+  `worker_shutdown_timeout` in `nginx.conf.in` and `stop-timeout` in
+  `snapcraft.yaml` bound the wait; keep the first shorter than the second.
 - `nginx -s reload` returns before the new workers serve. Anything that
   changes the config must go through `snapctl restart --reload`
   (`server-reload`), which waits for the new configuration to be live. Never

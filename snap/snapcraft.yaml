@@ -48,6 +48,11 @@ description: |
 grade: stable
 confinement: strict
 
+# nginx workers run as this user instead of root (`user` in nginx.conf.in).
+# Auto-approved by the store, unlike a custom user.
+system-usernames:
+  snap_daemon: shared
+
 hooks:
   configure:
     plugs:
@@ -66,6 +71,8 @@ apps:
   server:
     command: bin/server-launch
     reload-command: bin/server-reload
+    stop-command: bin/server-stop   # graceful: in-flight requests complete
+    stop-timeout: 30s
     daemon: simple
     restart-condition: on-failure
     restart-delay: 2s   # e.g. port taken at boot: retry calmly, not every 100ms

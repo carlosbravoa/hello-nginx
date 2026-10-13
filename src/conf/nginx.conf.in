@@ -2,13 +2,18 @@
 # Change settings with the snap's CLI or `snap set`; change site behaviour
 # in nginx/site.conf and nginx/http.conf in the source tree.
 
-# Workers stay root: the snap's files are root-owned and confinement leaves no
-# other user to switch to. Snap seccomp forbids setgroups(), so each worker
-# logs a harmless "initgroups(root, 0) failed" line at startup.
-user root;
+# The master stays root (it binds the port and opens the logs); workers drop
+# to snap_daemon, the user snapd provides for this (system-usernames in
+# snapcraft.yaml). Everything they read is world-readable; the temp paths
+# below are chowned to them by the master. Each worker logs a harmless
+# "initgroups(snap_daemon, ...) failed": seccomp refuses setgroups().
+user snap_daemon;
 worker_processes auto;
 pid @SNAP_DATA@/run/nginx.pid;
 error_log @SNAP_COMMON@/logs/error.log warn;
+
+# Graceful shutdown (server-stop) waits this long for in-flight requests.
+worker_shutdown_timeout 10s;
 
 events {
     worker_connections 1024;

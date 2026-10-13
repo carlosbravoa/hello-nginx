@@ -12,7 +12,9 @@
 #   deploys/<id>/        one checkout per deployed commit, without .git
 #   deploys/<id>.info    repo/branch/path/commit/date of that deploy
 #   current              id of the deploy being served (absent = built-in)
-#   history              ids in deploy order, for rollback
+#   history              ids in the order they were served, for rollback
+#                        (a rollback appends too, so "previous" always means
+#                        what was served before the current deploy)
 #
 # A deploy only prepares files and moves `current`. Callers then run
 # apply_config and reload, and call git_restore on failure.
@@ -98,6 +100,8 @@ validate_git_settings() {
     validate_git_branch "$(get_git_branch)"
     validate_git_path "$(get_git_path)"
     validate_git_autoupdate "$(get_git_autoupdate)"
+    [ -n "$(get_git_repo)" ] || [ "$(autoupdate_seconds "$(get_git_autoupdate)")" = 0 ] ||
+        die "git.auto-update needs git.repo (to serve the built-in site again: snap unset $SNAP_INSTANCE_NAME git)"
 }
 
 # ---------------------------------------------------------------- state
@@ -283,14 +287,15 @@ git_restore() { # previous id
     fi
 }
 
-# Previous deploy in history, for rollback.
+# The deploy served before the current one: the entry before the last
+# occurrence of the current id in history (rollbacks append, see above).
 git_previous_id() {
-    local cur prev= id
+    local cur prev= last= id
     cur=$(git_current)
     [ -f "$GIT_HISTORY" ] || return 0
     while read -r id; do
-        [ "$id" = "$cur" ] && break
-        [ -d "$GIT_DEPLOYS/$id" ] && prev=$id
+        [ "$id" = "$cur" ] && prev=$last
+        [ -d "$GIT_DEPLOYS/$id" ] && [ "$id" != "$cur" ] && last=$id
     done < "$GIT_HISTORY"
     echo "$prev"
 }

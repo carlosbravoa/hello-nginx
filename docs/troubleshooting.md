@@ -52,6 +52,16 @@ Common causes:
 - Dotfiles and dot-directories always return 404, except `/.well-known/`.
 - With a custom `location /` in `site.conf`, check its `try_files`.
 
+## Log files owned by snap_daemon
+
+After the first log rotation, `access.log` and `error.log` are owned by
+`snap_daemon`, the user nginx's workers run as. They stay group `root` with
+mode `0664`, which is what lets the snap's own root processes keep writing
+them. Don't `chmod 644` them: inside the sandbox root cannot override file
+permissions, so `nginx -t` and the next start would fail with
+`open() ... error.log failed (13: Permission denied)`. If that happened,
+`sudo chmod 664 /var/snap/<name>/common/logs/*.log` from the host fixes it.
+
 ## Files outside the snap
 
 By design, the server cannot read `/home`, `/srv`, `/var/www` or any other
@@ -62,12 +72,11 @@ it (see the reverse proxy recipe in
 
 ## Known harmless messages
 
-- **`[emerg] ... initgroups(root, 0) failed (1: Operation not permitted)`**
-  in the error log, once per worker per (re)start. nginx tries to reset
-  supplementary groups when starting workers; the sandbox forbids it, and
-  nginx carries on. The smoke test ignores this line.
-- **`apparmor="DENIED" ... capname="setuid"` / `"setgid"`** in the kernel log
-  for `snap.<name>.server`: the same thing seen from AppArmor.
+- **`[emerg] ... initgroups(snap_daemon, 584788) failed (1: Operation not
+  permitted)`** in the error log, once per worker per (re)start. nginx
+  resets the supplementary groups when a worker drops to `snap_daemon`; the
+  sandbox forbids `setgroups()`, and nginx carries on with the user and
+  group set. The smoke test ignores exactly this line.
 - **`[notice] ... signal process started`**: logged by every reload and by
   the daily log rotation.
 - **`apparmor="DENIED" ... comm="cli" ... capname="dac_read_search"`**

@@ -139,6 +139,7 @@ cmd_rollback() {
     [ -n "$id" ] || die "no earlier deploy to roll back to"
     git_set_current "$id"
     apply_site "$prev" keep
+    echo "$id" >> "$GIT_HISTORY"
     # Keep the settings in line with what is served, so the configure hook
     # (refresh, snap set) does not redeploy.
     snapctl set git.repo="$(git_info "$id" repo)"

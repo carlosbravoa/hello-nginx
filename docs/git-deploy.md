@@ -38,7 +38,7 @@ Everything is also a setting, which suits automation:
 | `git.repo` | `https://` (or `http://`) URL. Unset: serve the built-in site. |
 | `git.branch` | Branch or tag. Default: the remote's default branch. |
 | `git.path` | Subfolder to serve. Default: the repository root. |
-| `git.auto-update` | `off` (default), or an interval of at least `5m`: `15m`, `1h`, ... |
+| `git.auto-update` | `off` (default), or an interval of at least `5m`: `15m`, `1h`, ... Needs `git.repo`. |
 
 ```sh
 sudo snap set hello-nginx git.repo=https://github.com/me/my-site.git git.branch=main
@@ -77,9 +77,10 @@ Branches work as environments. For example, staging servers can follow
 
 ## Rollback and auto-update
 
-`rollback` serves the deploy before the current one, and points the
-settings at it. If auto-update is on, rollback turns it off, so the next
-check does not deploy the commit you rolled back from. When the repository
+`rollback` serves the deploy that was served before the current one, and
+points the settings at it. A second `rollback` therefore goes forward
+again. If auto-update is on, rollback turns it off, so the next check does
+not deploy the commit you rolled back from. When the repository
 is fixed, run `sudo hello-nginx update`, then turn auto-update back on.
 
 With auto-update on, a timer checks every 5 minutes whether the interval has

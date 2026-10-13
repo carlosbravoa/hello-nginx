@@ -21,9 +21,16 @@ for name in access error; do
 done
 [ "${#rotated[@]}" -gt 0 ] || exit 0
 
+# New files with the mode root processes rely on (see ensure_dirs), before
+# nginx reopens and chowns them to the worker user.
+ensure_dirs
 if [ -s "$SNAP_DATA/run/nginx.pid" ]; then
     nginx_run -c "$NGINX_CONF" -s reopen || warn "could not ask nginx to reopen its logs"
     sleep 1
 fi
-gzip -f "${rotated[@]}"
+# gzip -c rather than gzip: the input may be owned by the worker user, and
+# copying its ownership to the output is not allowed in confinement.
+for f in "${rotated[@]}"; do
+    gzip -c "$f" > "$f.gz" && rm -f "$f"
+done
 echo "Rotated: ${rotated[*]}"
