@@ -3,7 +3,7 @@
 # Your content goes in site/, your nginx rules in nginx/. See README.md.
 name: hello-nginx
 base: core24
-version: '2.1.0'
+version: '2.2.0'
 title: Hello nginx
 # This template is MIT; the bundled nginx is BSD-2-Clause.
 license: MIT AND BSD-2-Clause
