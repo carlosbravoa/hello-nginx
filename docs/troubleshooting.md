@@ -70,6 +70,13 @@ it (see the reverse proxy recipe in
   for `snap.<name>.server`: the same thing seen from AppArmor.
 - **`[notice] ... signal process started`**: logged by every reload and by
   the daily log rotation.
+- **`apparmor="DENIED" ... comm="cli" ... capname="dac_read_search"`**
+  (and `"dac_override"`) when you run `sudo <name> ...` from a directory
+  that root has no permission bits for, typically your own home on
+  Ubuntu 24.04 (mode 750). The kernel asks for a capability to bypass the
+  directory's permissions, the sandbox refuses, and the command works
+  anyway: nothing it does depends on the current directory. Run it from
+  `/` or any directory root can enter if the log lines bother you.
 - **`apparmor="DENIED" ... comm="git" ... capname="dac_override"`** for
   `snap.<name>.<name>` or `snap.<name>.git-auto-update`, during a git
   deploy. This is an optional capability check: the same git steps run

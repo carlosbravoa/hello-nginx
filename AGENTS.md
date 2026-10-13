@@ -128,6 +128,12 @@ generated `nginx.conf`, `config.json`, the pid file and temp dirs.
   - `/proc/<pid>/task/*/children`
   - the service's `cgroup.procs`
   Reload confirmation therefore uses the HTTP probe server.
+- Every bash process started with its cwd in a directory that root has no
+  permission bits for (a user's 750 home) logs a `dac_read_search` and a
+  `dac_override` capability denial. Harmless (nothing uses cwd), so `cli`
+  and `log-rotate` start with `cd /` to keep it to the first process. The
+  smoke test runs from `/root` and so never sees it; the EC2 variant copies
+  the files to `/root` for the same reason.
 - Not every coreutils binary is executable in confinement (`comm` is
   denied). Prefer bash builtins. If you add a tool, run the smoke test and
   look at the AppArmor section.

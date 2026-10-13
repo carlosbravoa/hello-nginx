@@ -2,6 +2,11 @@
 # Management CLI. Exposed as `<snap-name>` (the app is named after the snap).
 set -e
 . "$SNAP/lib/common.sh"
+# Run from /: a root process in a directory it has no permission bits for
+# (e.g. `sudo <snap> ...` typed in a user's 750 home) makes the kernel ask
+# for CAP_DAC_READ_SEARCH, which AppArmor denies and logs for every bash
+# process started there. Harmless, but noisy; nothing here uses cwd.
+cd /
 
 PROG="$SNAP_INSTANCE_NAME"
 

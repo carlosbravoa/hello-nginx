@@ -5,6 +5,7 @@
 # old file is compressed only afterwards. Empty logs are left alone.
 set -e
 . "$SNAP/lib/common.sh"
+cd /   # see src/bin/cli
 
 LOG_KEEP=14
 rotated=()
