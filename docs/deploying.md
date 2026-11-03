@@ -11,6 +11,15 @@ build dependencies. After deleting or renaming files under `snap/hooks/` or
 `src/`, run `snapcraft clean` first: snapcraft caches parts and keeps files
 that no longer exist in the source.
 
+For a build you will publish, set `SNAPCRAFT_BUILD_INFO=1`. The snap then
+includes `snap/manifest.yaml`, which lists the exact package versions inside
+it, so you can check it against a security notice:
+
+```sh
+SNAPCRAFT_BUILD_INFO=1 snapcraft pack
+unsquashfs -cat <name>_<version>_<arch>.snap snap/manifest.yaml | grep -E "^- (nginx|libcurl)"
+```
+
 ### Other architectures
 
 By default you get a snap for the machine you build on. To also ship
@@ -63,7 +72,19 @@ Every release:
 
 ```sh
 # bump `version` in snap/snapcraft.yaml, then
-snapcraft pack
+SNAPCRAFT_BUILD_INFO=1 snapcraft pack
+tests/lxd-smoke.sh
+snapcraft upload <name>_<version>_amd64.snap --release=edge
+```
+
+A security rebuild, which only picks up fixed packages from the Ubuntu
+archive, doesn't need a version bump: the store gives each upload a new
+revision. Run `snapcraft clean` first, because snapcraft caches parts and
+would otherwise keep the old packages:
+
+```sh
+snapcraft clean
+SNAPCRAFT_BUILD_INFO=1 snapcraft pack
 tests/lxd-smoke.sh
 snapcraft upload <name>_<version>_amd64.snap --release=edge
 ```
