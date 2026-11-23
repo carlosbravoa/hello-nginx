@@ -59,6 +59,35 @@ It installs the snap in a fresh container and checks:
 
 It ends with `ALL CHECKS PASSED`; the exit status is the number of failures.
 
+### On EC2, from the store
+
+After an upload, `tests/ec2-cloud-init.sh` checks what a real server gets.
+It boots a fresh Ubuntu instance with `launch-ubuntu`, whose
+cloud-init user data installs the snap from a store channel. Then it waits
+for the page to go live from the internet:
+
+```sh
+tests/ec2-cloud-init.sh                  # latest/edge
+tests/ec2-cloud-init.sh stable           # after promoting
+KEEP=1 tests/ec2-cloud-init.sh           # leave the instance running
+```
+
+It checks that:
+
+- cloud-init finished and installed the revision the store serves on that
+  channel
+- the server is active and answers on port 8080, inside the instance and
+  from the internet
+- the `Server` header carries no version
+- no AppArmor denials appear (same filter as the LXD test)
+
+It also prints the bundled nginx version.
+
+It needs `launch-ubuntu` and the AWS CLI. The security group in the
+launch-ubuntu config must allow inbound TCP 8080. The instance is terminated
+at the end (unless `KEEP=1`). The run is logged to `tests/logs/`, which is
+not committed.
+
 ## Publish
 
 One-time setup:
@@ -75,6 +104,8 @@ Every release:
 SNAPCRAFT_BUILD_INFO=1 snapcraft pack
 tests/lxd-smoke.sh
 snapcraft upload <name>_<version>_amd64.snap --release=edge
+tests/ec2-cloud-init.sh edge             # optional: a real server, from the store
+snapcraft release <name> <revision> stable
 ```
 
 A security rebuild, which only picks up fixed packages from the Ubuntu
@@ -87,6 +118,8 @@ snapcraft clean
 SNAPCRAFT_BUILD_INFO=1 snapcraft pack
 tests/lxd-smoke.sh
 snapcraft upload <name>_<version>_amd64.snap --release=edge
+tests/ec2-cloud-init.sh edge             # optional: a real server, from the store
+snapcraft release <name> <revision> stable
 ```
 
 The strict-confinement interfaces this template uses (`network`,

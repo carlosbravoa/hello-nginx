@@ -90,7 +90,7 @@ Bump `version` for every release.
 | `snap/gui/icon.png` | Snap icon (512×512 PNG), shown in the Snap Store. Source: `assets/icon.svg`. |
 | `src/` | The machinery: CLI, service scripts, config templates, developer pages. Normally untouched. |
 | `snap/hooks/` | Install and settings hooks. Normally untouched. |
-| `tests/` | `lxd-smoke.sh` builds a container, installs the snap and runs ~110 checks. |
+| `tests/` | `lxd-smoke.sh` builds a container, installs the snap and runs ~110 checks. `ec2-cloud-init.sh` installs it from the store on a fresh EC2 instance via cloud-init. |
 | `scripts/rename.sh` | Renames the snap and its command. |
 
 ## On the server

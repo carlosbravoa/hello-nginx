@@ -45,6 +45,7 @@ src/www/hello/           developer dashboard (static HTML/JS)
 scripts/rename.sh        rename the snap and its command
 tests/lxd-smoke.sh       host driver: LXD container, push, run checks, AppArmor scan
 tests/smoke-checks.sh    runs inside the container: ~110 checks
+tests/ec2-cloud-init.sh  EC2 via launch-ubuntu: cloud-init installs from a channel
 docs/                    user documentation
 ```
 
